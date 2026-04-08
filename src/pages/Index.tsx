@@ -166,14 +166,16 @@ interface HistoryItem {
 function TranslatorSection() {
   const [text, setText] = useState("");
   const [result, setResult] = useState("");
+  const [direction, setDirection] = useState<"en|ru" | "ru|en">("en|ru");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [charCount, setCharCount] = useState(0);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [copied, setCopied] = useState(false);
 
-  const handleTranslate = useCallback(async (overrideText?: string) => {
+  const handleTranslate = useCallback(async (overrideText?: string, overrideDir?: "en|ru" | "ru|en") => {
     const input = (overrideText ?? text).trim();
+    const dir = overrideDir ?? direction;
     if (!input) return;
     setLoading(true);
     setError("");
@@ -182,14 +184,13 @@ function TranslatorSection() {
       const res = await fetch(TRANSLATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: input, direction: "en|ru" }),
+        body: JSON.stringify({ text: input, direction: dir }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ошибка перевода");
       const translation = data.translation as string;
       setResult(translation);
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
       setHistory((prev) => [
         { id: Date.now(), original: input, translated: translation, time: timeStr },
         ...prev.slice(0, 19),
@@ -199,7 +200,7 @@ function TranslatorSection() {
     } finally {
       setLoading(false);
     }
-  }, [text]);
+  }, [text, direction]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(result);
@@ -207,17 +208,29 @@ function TranslatorSection() {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const handleSwap = () => {
+    const newDir = direction === "en|ru" ? "ru|en" : "en|ru";
+    setDirection(newDir);
+    setText("");
+    setResult("");
+    setError("");
+    setCharCount(0);
+  };
+
   const handleQuickPhrase = (phrase: string) => {
     setText(phrase);
     setCharCount(phrase.length);
     setResult("");
-    handleTranslate(phrase);
+    handleTranslate(phrase, direction);
   };
 
-  const quickPhrases = [
-    "Excuse me", "Thank you very much", "Could you help me?",
-    "Where is the nearest metro?", "How much does it cost?", "Have a nice day!",
-  ];
+  const fromLang = direction === "en|ru" ? "🇬🇧 Английский" : "🇷🇺 Русский";
+  const toLang = direction === "en|ru" ? "🇷🇺 Русский" : "🇬🇧 Английский";
+  const placeholder = direction === "en|ru" ? "Введите текст на английском…" : "Введите текст на русском…";
+
+  const quickPhrases = direction === "en|ru"
+    ? ["Excuse me", "Thank you very much", "Could you help me?", "Where is the nearest metro?", "How much does it cost?", "Have a nice day!"]
+    : ["Привет", "Спасибо большое", "Не могли бы вы помочь?", "Где ближайшее метро?", "Сколько это стоит?", "Добрый день"];
 
   return (
     <div className="section-enter">
@@ -227,19 +240,26 @@ function TranslatorSection() {
           Переводчик
         </h2>
         <p className="mt-2 text-base" style={{ color: "hsl(215, 16%, 47%)" }}>
-          Английский → Русский
+          {fromLang} → {toLang}
         </p>
         <div className="mt-4 w-12 h-[3px] rounded-full" style={{ backgroundColor: "hsl(215, 80%, 38%)" }} />
       </div>
 
-      {/* Direction badge */}
+      {/* Direction switcher */}
       <div className="flex items-center gap-3 mb-5">
         <span className="text-sm font-semibold px-4 py-1.5 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
-          🇬🇧 Английский
+          {fromLang}
         </span>
-        <Icon name="ArrowRight" size={16} style={{ color: "hsl(215, 16%, 47%)" }} />
+        <button
+          onClick={handleSwap}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+          style={{ backgroundColor: "hsl(215, 80%, 38%)", color: "#fff" }}
+          title="Поменять направление"
+        >
+          <Icon name="ArrowLeftRight" size={16} />
+        </button>
         <span className="text-sm font-semibold px-4 py-1.5 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
-          🇷🇺 Русский
+          {toLang}
         </span>
       </div>
 
@@ -249,7 +269,7 @@ function TranslatorSection() {
         <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(214, 25%, 88%)" }}>
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "hsl(214, 25%, 88%)", backgroundColor: "hsl(213, 75%, 96%)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 80%, 38%)" }}>
-              🇬🇧 Английский — исходный текст
+              {fromLang} — исходный текст
             </span>
             {text && (
               <button onClick={() => { setText(""); setResult(""); setCharCount(0); setError(""); }} style={{ color: "hsl(215, 16%, 47%)" }}>
@@ -268,7 +288,7 @@ function TranslatorSection() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleTranslate();
             }}
-            placeholder="Введите текст на английском…"
+            placeholder={placeholder}
             className="w-full resize-none p-4 text-sm outline-none font-golos"
             style={{ minHeight: "180px", color: "hsl(215, 35%, 12%)" }}
           />
@@ -294,7 +314,7 @@ function TranslatorSection() {
         <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(214, 25%, 88%)" }}>
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "hsl(214, 25%, 88%)", backgroundColor: "hsl(213, 75%, 96%)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 80%, 38%)" }}>
-              🇷🇺 Русский — перевод
+              {toLang} — перевод
             </span>
             {result && (
               <button onClick={handleCopy} style={{ color: copied ? "hsl(142, 70%, 40%)" : "hsl(215, 16%, 47%)" }} title="Скопировать">
