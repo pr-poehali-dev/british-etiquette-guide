@@ -156,16 +156,25 @@ function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: stri
   );
 }
 
+interface HistoryItem {
+  id: number;
+  original: string;
+  translated: string;
+  time: string;
+}
+
 function TranslatorSection() {
   const [text, setText] = useState("");
   const [result, setResult] = useState("");
-  const [direction, setDirection] = useState<"en|ru" | "ru|en">("en|ru");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [charCount, setCharCount] = useState(0);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [copied, setCopied] = useState(false);
 
-  const handleTranslate = useCallback(async () => {
-    if (!text.trim()) return;
+  const handleTranslate = useCallback(async (overrideText?: string) => {
+    const input = (overrideText ?? text).trim();
+    if (!input) return;
     setLoading(true);
     setError("");
     setResult("");
@@ -173,67 +182,77 @@ function TranslatorSection() {
       const res = await fetch(TRANSLATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), direction }),
+        body: JSON.stringify({ text: input, direction: "en|ru" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ошибка перевода");
-      setResult(data.translation);
+      const translation = data.translation as string;
+      setResult(translation);
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+      setHistory((prev) => [
+        { id: Date.now(), original: input, translated: translation, time: timeStr },
+        ...prev.slice(0, 19),
+      ]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Ошибка соединения");
     } finally {
       setLoading(false);
     }
-  }, [text, direction]);
+  }, [text]);
 
-  const handleSwap = () => {
-    setDirection((d) => (d === "en|ru" ? "ru|en" : "en|ru"));
-    setResult("");
-    setError("");
+  const handleCopy = () => {
+    navigator.clipboard.writeText(result);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
-  const fromLang = direction === "en|ru" ? "🇬🇧 Английский" : "🇷🇺 Русский";
-  const toLang = direction === "en|ru" ? "🇷🇺 Русский" : "🇬🇧 Английский";
+  const handleQuickPhrase = (phrase: string) => {
+    setText(phrase);
+    setCharCount(phrase.length);
+    setResult("");
+    handleTranslate(phrase);
+  };
+
+  const quickPhrases = [
+    "Excuse me", "Thank you very much", "Could you help me?",
+    "Where is the nearest metro?", "How much does it cost?", "Have a nice day!",
+  ];
 
   return (
     <div className="section-enter">
+      {/* Title */}
       <div className="mb-8">
         <h2 className="font-cormorant text-4xl font-semibold leading-tight" style={{ color: "hsl(215, 35%, 12%)" }}>
           Переводчик
         </h2>
         <p className="mt-2 text-base" style={{ color: "hsl(215, 16%, 47%)" }}>
-          Мгновенный перевод между английским и русским
+          Английский → Русский
         </p>
         <div className="mt-4 w-12 h-[3px] rounded-full" style={{ backgroundColor: "hsl(215, 80%, 38%)" }} />
       </div>
 
-      {/* Direction switcher */}
-      <div className="flex items-center gap-3 mb-6">
-        <span className="text-sm font-semibold px-4 py-2 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
-          {fromLang}
+      {/* Direction badge */}
+      <div className="flex items-center gap-3 mb-5">
+        <span className="text-sm font-semibold px-4 py-1.5 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
+          🇬🇧 Английский
         </span>
-        <button
-          onClick={handleSwap}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
-          style={{ backgroundColor: "hsl(215, 80%, 38%)", color: "#fff" }}
-          title="Поменять направление"
-        >
-          <Icon name="ArrowLeftRight" size={16} />
-        </button>
-        <span className="text-sm font-semibold px-4 py-2 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
-          {toLang}
+        <Icon name="ArrowRight" size={16} style={{ color: "hsl(215, 16%, 47%)" }} />
+        <span className="text-sm font-semibold px-4 py-1.5 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
+          🇷🇺 Русский
         </span>
       </div>
 
-      {/* Input + Output */}
+      {/* Translator blocks */}
       <div className="grid md:grid-cols-2 gap-4">
         {/* Input */}
         <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(214, 25%, 88%)" }}>
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "hsl(214, 25%, 88%)", backgroundColor: "hsl(213, 75%, 96%)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 80%, 38%)" }}>
-              {fromLang} — исходный текст
+              🇬🇧 Английский — исходный текст
             </span>
             {text && (
-              <button onClick={() => { setText(""); setResult(""); setCharCount(0); }} style={{ color: "hsl(215, 16%, 47%)" }}>
+              <button onClick={() => { setText(""); setResult(""); setCharCount(0); setError(""); }} style={{ color: "hsl(215, 16%, 47%)" }}>
                 <Icon name="X" size={14} />
               </button>
             )}
@@ -244,36 +263,29 @@ function TranslatorSection() {
               const val = e.target.value.slice(0, 500);
               setText(val);
               setCharCount(val.length);
-              if (!val) setResult("");
+              if (!val) { setResult(""); setError(""); }
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleTranslate();
             }}
-            placeholder={direction === "en|ru" ? "Введите текст на английском…" : "Введите текст на русском…"}
+            placeholder="Введите текст на английском…"
             className="w-full resize-none p-4 text-sm outline-none font-golos"
             style={{ minHeight: "180px", color: "hsl(215, 35%, 12%)" }}
           />
-          <div className="px-4 py-2 flex items-center justify-between border-t" style={{ borderColor: "hsl(214, 25%, 88%)" }}>
+          <div className="px-4 py-2.5 flex items-center justify-between border-t" style={{ borderColor: "hsl(214, 25%, 88%)" }}>
             <span className="text-xs" style={{ color: charCount >= 450 ? "hsl(0,84%,60%)" : "hsl(215, 16%, 47%)" }}>
               {charCount} / 500
             </span>
             <button
-              onClick={handleTranslate}
+              onClick={() => handleTranslate()}
               disabled={loading || !text.trim()}
               className="flex items-center gap-2 text-sm font-semibold px-5 py-2 rounded-lg transition-all disabled:opacity-40"
               style={{ backgroundColor: "hsl(215, 80%, 38%)", color: "#fff" }}
             >
-              {loading ? (
-                <>
-                  <Icon name="Loader2" size={15} className="animate-spin" />
-                  Перевожу…
-                </>
-              ) : (
-                <>
-                  <Icon name="Languages" size={15} />
-                  Перевести
-                </>
-              )}
+              {loading
+                ? <><Icon name="Loader2" size={15} className="animate-spin" />Перевожу…</>
+                : <><Icon name="Languages" size={15} />Перевести</>
+              }
             </button>
           </div>
         </div>
@@ -282,15 +294,11 @@ function TranslatorSection() {
         <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(214, 25%, 88%)" }}>
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "hsl(214, 25%, 88%)", backgroundColor: "hsl(213, 75%, 96%)" }}>
             <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 80%, 38%)" }}>
-              {toLang} — перевод
+              🇷🇺 Русский — перевод
             </span>
             {result && (
-              <button
-                onClick={() => navigator.clipboard.writeText(result)}
-                style={{ color: "hsl(215, 16%, 47%)" }}
-                title="Скопировать"
-              >
-                <Icon name="Copy" size={14} />
+              <button onClick={handleCopy} style={{ color: copied ? "hsl(142, 70%, 40%)" : "hsl(215, 16%, 47%)" }} title="Скопировать">
+                <Icon name={copied ? "Check" : "Copy"} size={14} />
               </button>
             )}
           </div>
@@ -311,12 +319,12 @@ function TranslatorSection() {
               <p className="leading-relaxed animate-fade-in">{result}</p>
             )}
             {!loading && !error && !result && (
-              <p className="mt-4 text-sm" style={{ color: "hsl(215, 16%, 60%)" }}>
+              <p className="mt-4" style={{ color: "hsl(215, 16%, 60%)" }}>
                 Перевод появится здесь…
               </p>
             )}
           </div>
-          <div className="px-4 py-2 border-t" style={{ borderColor: "hsl(214, 25%, 88%)" }}>
+          <div className="px-4 py-2.5 border-t" style={{ borderColor: "hsl(214, 25%, 88%)" }}>
             <span className="text-xs" style={{ color: "hsl(215, 16%, 47%)" }}>
               Ctrl+Enter — быстрый перевод
             </span>
@@ -325,26 +333,66 @@ function TranslatorSection() {
       </div>
 
       {/* Quick phrases */}
-      <div className="mt-8">
-        <p className="text-sm font-semibold mb-3" style={{ color: "hsl(215, 16%, 47%)" }}>Быстрые фразы:</p>
+      <div className="mt-6">
+        <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "hsl(215, 16%, 47%)" }}>Быстрые фразы:</p>
         <div className="flex flex-wrap gap-2">
-          {(direction === "en|ru"
-            ? ["Excuse me", "Thank you very much", "Could you help me?", "Where is the nearest metro?", "How much does it cost?"]
-            : ["Где ближайшее метро?", "Сколько это стоит?", "Спасибо большое", "Не могли бы вы помочь?", "Добрый день"]
-          ).map((phrase) => (
+          {quickPhrases.map((phrase) => (
             <button
               key={phrase}
-              onClick={() => { setText(phrase); setCharCount(phrase.length); setResult(""); }}
+              onClick={() => handleQuickPhrase(phrase)}
               className="text-xs px-3 py-1.5 rounded-full transition-all"
               style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)", border: "1px solid hsl(215, 60%, 88%)" }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "hsl(215, 80%, 38%)", e.currentTarget.style.color = "#fff")}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "hsl(213, 75%, 96%)", e.currentTarget.style.color = "hsl(215, 80%, 38%)")}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = "hsl(215, 80%, 38%)"; e.currentTarget.style.color = "#fff"; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = "hsl(213, 75%, 96%)"; e.currentTarget.style.color = "hsl(215, 80%, 38%)"; }}
             >
               {phrase}
             </button>
           ))}
         </div>
       </div>
+
+      {/* History */}
+      {history.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 16%, 47%)" }}>
+              История переводов
+            </p>
+            <button
+              onClick={() => setHistory([])}
+              className="text-xs flex items-center gap-1 transition-opacity hover:opacity-60"
+              style={{ color: "hsl(215, 16%, 47%)" }}
+            >
+              <Icon name="Trash2" size={12} />
+              Очистить
+            </button>
+          </div>
+          <div className="space-y-2">
+            {history.map((item) => (
+              <div
+                key={item.id}
+                className="bg-white rounded-xl px-4 py-3 flex gap-4 items-start cursor-pointer transition-all"
+                style={{ border: "1px solid hsl(214, 25%, 88%)" }}
+                onClick={() => { setText(item.original); setCharCount(item.original.length); setResult(item.translated); setError(""); }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "hsl(215, 80%, 38%)"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "hsl(214, 25%, 88%)"; }}
+              >
+                <div className="flex-1 min-w-0 grid md:grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-xs mb-1 block" style={{ color: "hsl(215, 16%, 47%)" }}>🇬🇧</span>
+                    <p className="text-sm italic truncate" style={{ color: "hsl(215, 35%, 12%)" }}>{item.original}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs mb-1 block" style={{ color: "hsl(215, 16%, 47%)" }}>🇷🇺</span>
+                    <p className="text-sm truncate" style={{ color: "hsl(215, 35%, 12%)" }}>{item.translated}</p>
+                  </div>
+                </div>
+                <span className="text-xs flex-shrink-0 mt-0.5" style={{ color: "hsl(215, 16%, 65%)" }}>{item.time}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
