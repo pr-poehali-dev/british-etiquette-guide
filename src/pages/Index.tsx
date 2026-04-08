@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+
+const TRANSLATE_URL = "https://functions.poehali.dev/e0f40940-f1da-4fa2-b005-3b6816f5ab75";
 
 type Section =
   | "home"
@@ -8,7 +10,8 @@ type Section =
   | "situations"
   | "directions"
   | "top10"
-  | "memo";
+  | "memo"
+  | "translator";
 
 const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
   { id: "home", label: "Главная", icon: "Home" },
@@ -18,6 +21,7 @@ const NAV_ITEMS: { id: Section; label: string; icon: string }[] = [
   { id: "directions", label: "Как спросить дорогу", icon: "MapPin" },
   { id: "top10", label: "Топ-10 фраз", icon: "Star" },
   { id: "memo", label: "Памятка", icon: "BookOpen" },
+  { id: "translator", label: "Переводчик", icon: "Languages" },
 ];
 
 interface PhraseRow {
@@ -148,6 +152,199 @@ function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: stri
       </h2>
       {sub && <p className="mt-2 text-base" style={{ color: "hsl(215, 16%, 47%)" }}>{sub}</p>}
       <div className="mt-4 w-12 h-[3px] rounded-full" style={{ backgroundColor: "hsl(215, 80%, 38%)" }} />
+    </div>
+  );
+}
+
+function TranslatorSection() {
+  const [text, setText] = useState("");
+  const [result, setResult] = useState("");
+  const [direction, setDirection] = useState<"en|ru" | "ru|en">("en|ru");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [charCount, setCharCount] = useState(0);
+
+  const handleTranslate = useCallback(async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    setError("");
+    setResult("");
+    try {
+      const res = await fetch(TRANSLATE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.trim(), direction }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Ошибка перевода");
+      setResult(data.translation);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Ошибка соединения");
+    } finally {
+      setLoading(false);
+    }
+  }, [text, direction]);
+
+  const handleSwap = () => {
+    setDirection((d) => (d === "en|ru" ? "ru|en" : "en|ru"));
+    setResult("");
+    setError("");
+  };
+
+  const fromLang = direction === "en|ru" ? "🇬🇧 Английский" : "🇷🇺 Русский";
+  const toLang = direction === "en|ru" ? "🇷🇺 Русский" : "🇬🇧 Английский";
+
+  return (
+    <div className="section-enter">
+      <div className="mb-8">
+        <h2 className="font-cormorant text-4xl font-semibold leading-tight" style={{ color: "hsl(215, 35%, 12%)" }}>
+          Переводчик
+        </h2>
+        <p className="mt-2 text-base" style={{ color: "hsl(215, 16%, 47%)" }}>
+          Мгновенный перевод между английским и русским
+        </p>
+        <div className="mt-4 w-12 h-[3px] rounded-full" style={{ backgroundColor: "hsl(215, 80%, 38%)" }} />
+      </div>
+
+      {/* Direction switcher */}
+      <div className="flex items-center gap-3 mb-6">
+        <span className="text-sm font-semibold px-4 py-2 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
+          {fromLang}
+        </span>
+        <button
+          onClick={handleSwap}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+          style={{ backgroundColor: "hsl(215, 80%, 38%)", color: "#fff" }}
+          title="Поменять направление"
+        >
+          <Icon name="ArrowLeftRight" size={16} />
+        </button>
+        <span className="text-sm font-semibold px-4 py-2 rounded-full" style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)" }}>
+          {toLang}
+        </span>
+      </div>
+
+      {/* Input + Output */}
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Input */}
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(214, 25%, 88%)" }}>
+          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "hsl(214, 25%, 88%)", backgroundColor: "hsl(213, 75%, 96%)" }}>
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 80%, 38%)" }}>
+              {fromLang} — исходный текст
+            </span>
+            {text && (
+              <button onClick={() => { setText(""); setResult(""); setCharCount(0); }} style={{ color: "hsl(215, 16%, 47%)" }}>
+                <Icon name="X" size={14} />
+              </button>
+            )}
+          </div>
+          <textarea
+            value={text}
+            onChange={(e) => {
+              const val = e.target.value.slice(0, 500);
+              setText(val);
+              setCharCount(val.length);
+              if (!val) setResult("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleTranslate();
+            }}
+            placeholder={direction === "en|ru" ? "Введите текст на английском…" : "Введите текст на русском…"}
+            className="w-full resize-none p-4 text-sm outline-none font-golos"
+            style={{ minHeight: "180px", color: "hsl(215, 35%, 12%)" }}
+          />
+          <div className="px-4 py-2 flex items-center justify-between border-t" style={{ borderColor: "hsl(214, 25%, 88%)" }}>
+            <span className="text-xs" style={{ color: charCount >= 450 ? "hsl(0,84%,60%)" : "hsl(215, 16%, 47%)" }}>
+              {charCount} / 500
+            </span>
+            <button
+              onClick={handleTranslate}
+              disabled={loading || !text.trim()}
+              className="flex items-center gap-2 text-sm font-semibold px-5 py-2 rounded-lg transition-all disabled:opacity-40"
+              style={{ backgroundColor: "hsl(215, 80%, 38%)", color: "#fff" }}
+            >
+              {loading ? (
+                <>
+                  <Icon name="Loader2" size={15} className="animate-spin" />
+                  Перевожу…
+                </>
+              ) : (
+                <>
+                  <Icon name="Languages" size={15} />
+                  Перевести
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Output */}
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid hsl(214, 25%, 88%)" }}>
+          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: "hsl(214, 25%, 88%)", backgroundColor: "hsl(213, 75%, 96%)" }}>
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(215, 80%, 38%)" }}>
+              {toLang} — перевод
+            </span>
+            {result && (
+              <button
+                onClick={() => navigator.clipboard.writeText(result)}
+                style={{ color: "hsl(215, 16%, 47%)" }}
+                title="Скопировать"
+              >
+                <Icon name="Copy" size={14} />
+              </button>
+            )}
+          </div>
+          <div className="p-4 text-sm font-golos" style={{ minHeight: "180px", color: "hsl(215, 35%, 12%)" }}>
+            {loading && (
+              <div className="flex items-center gap-2 mt-4" style={{ color: "hsl(215, 16%, 47%)" }}>
+                <Icon name="Loader2" size={16} className="animate-spin" />
+                Выполняю перевод…
+              </div>
+            )}
+            {!loading && error && (
+              <div className="flex items-start gap-2 mt-2" style={{ color: "hsl(0, 84%, 50%)" }}>
+                <Icon name="AlertCircle" size={16} className="mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            {!loading && !error && result && (
+              <p className="leading-relaxed animate-fade-in">{result}</p>
+            )}
+            {!loading && !error && !result && (
+              <p className="mt-4 text-sm" style={{ color: "hsl(215, 16%, 60%)" }}>
+                Перевод появится здесь…
+              </p>
+            )}
+          </div>
+          <div className="px-4 py-2 border-t" style={{ borderColor: "hsl(214, 25%, 88%)" }}>
+            <span className="text-xs" style={{ color: "hsl(215, 16%, 47%)" }}>
+              Ctrl+Enter — быстрый перевод
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick phrases */}
+      <div className="mt-8">
+        <p className="text-sm font-semibold mb-3" style={{ color: "hsl(215, 16%, 47%)" }}>Быстрые фразы:</p>
+        <div className="flex flex-wrap gap-2">
+          {(direction === "en|ru"
+            ? ["Excuse me", "Thank you very much", "Could you help me?", "Where is the nearest metro?", "How much does it cost?"]
+            : ["Где ближайшее метро?", "Сколько это стоит?", "Спасибо большое", "Не могли бы вы помочь?", "Добрый день"]
+          ).map((phrase) => (
+            <button
+              key={phrase}
+              onClick={() => { setText(phrase); setCharCount(phrase.length); setResult(""); }}
+              className="text-xs px-3 py-1.5 rounded-full transition-all"
+              style={{ backgroundColor: "hsl(213, 75%, 96%)", color: "hsl(215, 80%, 38%)", border: "1px solid hsl(215, 60%, 88%)" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "hsl(215, 80%, 38%)", e.currentTarget.style.color = "#fff")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "hsl(213, 75%, 96%)", e.currentTarget.style.color = "hsl(215, 80%, 38%)")}
+            >
+              {phrase}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -496,6 +693,10 @@ export default function Index() {
             </div>
           </div>
         )}
+
+        {/* TRANSLATOR */}
+        {active === "translator" && <TranslatorSection />}
+
       </main>
 
       <footer className="border-t mt-16 py-8 text-center text-sm" style={{ borderColor: "hsl(214, 25%, 88%)", color: "hsl(215, 16%, 47%)" }}>

@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "Перевод EN → RU",
+      "method": "POST",
+      "path": "/",
+      "body": {"text": "Hello", "direction": "en|ru"},
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    },
+    {
+      "name": "Перевод RU → EN",
+      "method": "POST",
+      "path": "/",
+      "body": {"text": "Привет", "direction": "ru|en"},
+      "expectedStatus": 200,
+      "bodyMatcher": "none"
+    },
+    {
+      "name": "Пустой текст",
+      "method": "POST",
+      "path": "/",
+      "body": {"text": "", "direction": "en|ru"},
+      "expectedStatus": 400,
+      "bodyMatcher": "none"
+    }
+  ]
+}
